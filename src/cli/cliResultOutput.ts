@@ -513,7 +513,9 @@ export const createCliResultOutput = (
     if (
       (format === "toon" || format === "md") &&
       !options.tokenCount &&
-      (!options.tokenWindow || format === "md") &&
+      (!options.tokenWindow ||
+        format === "md" ||
+        operationFailure !== undefined) &&
       (format === "md"
         ? containsUnrepresentableMarkdown(selected)
         : containsUnpairedSurrogate(selected))
