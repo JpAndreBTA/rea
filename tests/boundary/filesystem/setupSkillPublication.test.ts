@@ -115,12 +115,47 @@ describe("skill publication ownership", () => {
       },
     });
     if (result.ok) throw new Error("Expected destination conflict");
+    expect(result.error.reason).toContain(
+      "Skill destination appeared or changed during installation",
+    );
+    expect(result.error.remediation).toContain(
+      "Stop concurrent setup activity",
+    );
+    expect(result.error.remediation).not.toContain("Check permissions");
     expect(result.error.rollbackFailures).toEqual([]);
     expect(await readFile(manifest, "utf8")).toBe("concurrent user file\n");
     expect(await readdir(dirname(manifest))).toEqual([
       "SKILL.md",
       "references",
     ]);
+  });
+
+  it("reports a destination changed before readback without overwriting it", async () => {
+    const home = await createTestTempDirectory("rea-skill-readback-conflict-");
+    const manifest = join(skillDestinations(home, [])[0]!.path, "SKILL.md");
+    const result = await installCanonicalSkill(home, [], {}, process.platform, {
+      ...skillPublicationOperations,
+      prepare: async (...args) => {
+        const publication = await SkillFilePublication.prepare(...args);
+        if (publication.path === manifest) {
+          const publish = publication.publish.bind(publication);
+          vi.spyOn(publication, "publish").mockImplementation(async () => {
+            await publish();
+            await writeFile(manifest, "concurrent edit\n");
+          });
+        }
+        return publication;
+      },
+    });
+    if (result.ok) throw new Error("Expected destination conflict");
+    expect(result.error.stage).toBe("readback");
+    expect(result.error.remediation).toContain(
+      "Stop concurrent setup activity",
+    );
+    expect(await readFile(manifest, "utf8")).toBe("concurrent edit\n");
+    expect(result.error.rollbackFailures).toContainEqual(
+      expect.objectContaining({ path: manifest }),
+    );
   });
 });
 
