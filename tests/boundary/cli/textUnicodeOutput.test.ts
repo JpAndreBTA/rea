@@ -3,6 +3,9 @@ import { expect, it } from "vitest";
 import { decode } from "@toon-format/toon";
 import { createCliResultOutput } from "../../../src/cli/cliResultOutput.js";
 import { parseCliOutputArguments } from "../../../src/cliOutput.js";
+import { logCliCommand } from "../../../src/cliLogging.js";
+import { silentLogger } from "../../../src/logger.js";
+import { AnalysisInputError } from "../../../src/domain/analysisErrorCore.js";
 import {
   formatCliOutput,
   prepareDelimitedOutput,
@@ -33,6 +36,45 @@ it("refuses TOON values or keys that UTF-8 cannot preserve", async () => {
       code: "invalid_request",
       remediation: { action: expect.stringContaining("--format json") },
     });
+  }
+});
+
+it("retains a classified operation failure when TOON cannot encode its diagnostic", async () => {
+  const previousExitCode = process.exitCode;
+  try {
+    const value = await logCliCommand(silentLogger, "fixture", async () => {
+      throw new AnalysisInputError("fixture", { userMessage: "bad \ud800" });
+    });
+    const output = createCliResultOutput(
+      parseCliOutputArguments(["--format", "toon", "--full-output"]),
+      new Writable({
+        write(_chunk, _encoding, done) {
+          done();
+        },
+      }),
+    );
+    if (output === undefined) throw new Error("invalid output settings");
+    expect(
+      await output.write(value, {
+        command: "fixture",
+        duration: "1ms",
+        format: "toon",
+      }),
+    ).toBe(true);
+    expect(output.error).toMatchObject({
+      code: "invalid_request",
+      details: {
+        diagnostics: {
+          original_failure: {
+            code: "invalid_request",
+            category: "invalid_input",
+            retryable: false,
+          },
+        },
+      },
+    });
+  } finally {
+    process.exitCode = previousExitCode;
   }
 });
 

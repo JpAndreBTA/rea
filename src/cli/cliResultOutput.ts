@@ -476,6 +476,11 @@ export const createCliResultOutput = (
                 : "TOON cannot preserve unpaired UTF-16 surrogates in UTF-8 output.",
             remediationAction:
               "Use --format json or --format yaml to retain the exact code units.",
+            ...(completed?.originalFailure === undefined
+              ? {}
+              : {
+                  diagnostics: { original_failure: completed.originalFailure },
+                }),
           },
           [
             {
