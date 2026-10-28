@@ -110,6 +110,7 @@ it("inspects the caller-selected nonstandard ABI through the public CLI", async 
   ]);
   expect(selected.exitCode).toBe(0);
   expect(JSON.parse(selected.stdout)).toMatchObject({
+    caller_input_path: path,
     parameters: { path, abi: "ARM64-V8A" },
     normalized_result: {
       abi: "ARM64-V8A",

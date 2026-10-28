@@ -14,6 +14,7 @@ import type { Logger } from "pino";
 import type { CliInstance } from "./types.js";
 import { withCommandCancellation } from "./commandCancellation.js";
 import { finishAnalysisCommand } from "./finishAnalysisCommand.js";
+import { bindCliEvidenceCallerPath } from "./cliEvidenceCallerPath.js";
 
 /** One flutter command: CLI shape and the request it produces. */
 interface FlutterCommandSpec {
@@ -72,12 +73,13 @@ export const registerFlutterCommands = (
         withCommandCancellation((signal) =>
           logCliCommand(logger, spec.command, () =>
             finishAnalysisCommand(
-              () =>
+              bindCliEvidenceCallerPath(args.path as string, () =>
                 new FlutterBuildAnalysisService(provider).execute(
                   spec.operation,
                   spec.toInput(args, options ?? {}),
                   { signal },
                 ),
+              ),
               { close: () => provider.close() },
               "flutter",
               spec.operation,
