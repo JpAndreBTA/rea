@@ -55,13 +55,31 @@ For example, Unity Mono/IL2CPP, Godot PCK and Unreal IoStore markers are useful
 target-selection evidence. Candidate labels do not prove that the editor, module,
 plugin or runtime component loaded.
 
+### When a root scan is partial
+
+If `source_coverage.status` is `partial` or the representation-budget limitation
+is present, keep that root result as an overview only. Continue within the same
+engine/version manifest by scanning the observed top-level functional
+directories separately and saving one Evidence bundle per selected root. Typical
+groups include Unity `Editor/Data/Managed`, `Editor/Data/PlaybackEngines`,
+`Editor/Modules` and `Editor/Data/Resources`; Unreal `Engine/Binaries`,
+`Engine/Content`, `Engine/Plugins`, `Engine/Programs` and `Engine/Config`; and
+the Godot distribution root or separately installed export templates. Select
+only directories that exist in the retained root inventory.
+
+Record each subroot path, identity and Evidence ID. Multiple sequential scans
+are still not an atomic view of the installation, and a page exhausting its
+retained rows does not establish that another subroot or unread file is absent.
+Do not combine the subroot snapshots into one completeness claim unless the
+target boundary and every required subroot have been reconciled.
+
 ## Follow the format readers that exist today
 
-| Reference | Available static path                                                                                                         | What it establishes                                                                                             | What remains unknown                                                                                                                                                                            |
-| --------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Unity     | Unity Mono and IL2CPP installation candidates; IL2CPP metadata inspection; UnityFS artifact inventory.                        | Observed managed references, supported IL2CPP metadata tables, UnityFS container entries and declared metadata. | Runtime binding, Unity asset serialization semantics, scene/prefab behavior, shader execution, editor interaction and performance.                                                              |
-| Godot     | Godot PCK artifact inventory for supported format versions 2, 3 and 4, including a validated executable trailer when present. | PCK header, bounded directory entries and observed integrity results for inspected members.                     | Encrypted or unexamined payloads, project/runtime behavior, scene semantics, editor interaction, rendering and performance.                                                                     |
-| Unreal    | Desktop path conventions and the IoStore TOC signature are detected as candidates.                                            | That an observed path or header resembles an Unreal content container.                                          | There is no Unreal `.pak`, `.utoc` or `.ucas` reader in this checkout; asset registry, `.uasset`/`.uexp`, Blueprint/Kismet, shader, plugin and runtime semantics remain unsupported or unknown. |
+| Reference | Available static path                                                                                                    | What it establishes                                                                                                      | What remains unknown                                                                                                                                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unity     | Canonical Editor binary and hub/module manifest paths; Unity Editor `Data/Managed` references; IL2CPP metadata; UnityFS. | Editor installation-path evidence, managed references, supported IL2CPP metadata tables, and UnityFS container entries.  | Hub/module manifest contents, runtime binding, asset serialization semantics, scene/prefab behavior, shader execution, editor interaction and performance.                                               |
+| Godot     | Tools-editor binary path convention; Godot PCK inventory for supported formats 2, 3 and 4, including validated trailers. | Editor-binary path evidence, PCK header, bounded directory entries and observed integrity results for inspected members. | Editor version/build options, encrypted or unexamined payloads, project/runtime behavior, scene semantics, editor interaction, rendering and performance.                                                |
+| Unreal    | Canonical Editor binary, `Build.version` and `.uplugin` path markers; IoStore TOC signature; Unreal content paths.       | Editor installation-path evidence and plugin descriptor names by path; container-like path/header markers.               | Build-version/descriptor contents, plugin enablement/loading, and Unreal `.pak`, `.utoc` or `.ucas` content reading; asset registry, `.uasset`/`.uexp`, Blueprint/Kismet, shaders and runtime semantics. |
 
 Use `inspect_artifact` for a supported container and preserve its complete
 inventory Evidence. `compare_artifacts` compares exact occurrence paths,
