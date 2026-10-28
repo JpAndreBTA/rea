@@ -547,6 +547,7 @@ export class WabtArtifactProvider implements WasmArtifactPort {
       // WAT framing reads module names, not every inner name map. A producer
       // warning may concern a skipped body or another custom section; without
       // section attribution it cannot establish complete debug-name coverage.
+      capturedOutput = artifactCommandOutput(dump);
       const { sections, headers, details, invalidNameEnds } = parseWabtOutput(
         dump.stdout.text,
         selected.bytes.length,
@@ -600,7 +601,6 @@ export class WabtArtifactProvider implements WasmArtifactPort {
         optionalLimitations.push(
           "An optional custom-section name is invalid UTF-8 and was omitted from decoded WAT. Its original bytes and objdump section range remain available; its identity and debug-name coverage are unknown.",
         );
-      capturedOutput = artifactCommandOutput(dump);
       const limitations = [
         "WAT is a decoded representation, not original source or proof of runtime behavior. Custom annotations may retain payloads, but WAT does not establish original binary layout or round-trip byte identity. Original bytes and objdump output remain authoritative.",
         "Imports and exports retain exact top-level WABT WAT forms. Names remain escaped producer text; unescaped objdump display names are not parsed as unambiguous identifiers.",
