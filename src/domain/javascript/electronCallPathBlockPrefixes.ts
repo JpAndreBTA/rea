@@ -34,21 +34,61 @@ export class ElectronCallPathBlockPrefixes {
     ElectronStatementFallthrough | null
   >();
 
-  constructor(private readonly admitVisit: () => boolean) {}
+  constructor(
+    private readonly admitVisit: () => boolean,
+    private readonly parents?: WeakMap<t.Node, t.Node>,
+  ) {}
 
-  statement(statement: t.Statement): ElectronStatementFallthrough | null {
+  /** A labelled break leaves this block only when its target encloses it. */
+  private exits(
+    node: t.Node | null | undefined,
+    block: t.BlockStatement,
+    depth = 0,
+  ): boolean {
+    if (!node || depth >= 128) return false;
+    if (symbolicDefiniteExit(node)) return true;
+    if (t.isBreakStatement(node) && node.label && this.parents) {
+      for (
+        let parent = this.parents.get(block), n = 0;
+        parent && n < 128;
+        parent = this.parents.get(parent), n++
+      ) {
+        if (!this.admitVisit() || t.isFunction(parent)) return false;
+        if (
+          t.isLabeledStatement(parent) &&
+          parent.label.name === node.label.name
+        )
+          return true;
+      }
+      return false;
+    }
+    if (t.isBlockStatement(node))
+      return node.body.some((child) => this.exits(child, block, depth + 1));
+    return (
+      t.isIfStatement(node) &&
+      this.exits(node.consequent, block, depth + 1) &&
+      this.exits(node.alternate, block, depth + 1)
+    );
+  }
+
+  statement(
+    statement: t.Statement,
+    block?: t.BlockStatement,
+  ): ElectronStatementFallthrough | null {
     const cached = this.#facts.get(statement);
     if (cached !== undefined) return cached;
-    const fact: ElectronStatementFallthrough | null = symbolicDefiniteExit(
-      statement,
-    )
+    const exits = (node: t.Node | null | undefined) =>
+      block === undefined
+        ? symbolicDefiniteExit(node)
+        : this.exits(node, block);
+    const fact: ElectronStatementFallthrough | null = exits(statement)
       ? { kind: "exit" }
       : t.isIfStatement(statement)
         ? {
             kind: "branch",
             test: statement.test,
-            consequentExits: symbolicDefiniteExit(statement.consequent),
-            alternateExits: symbolicDefiniteExit(statement.alternate),
+            consequentExits: exits(statement.consequent),
+            alternateExits: exits(statement.alternate),
           }
         : null;
     this.#facts.set(statement, fact);
@@ -70,7 +110,7 @@ export class ElectronCallPathBlockPrefixes {
       for (const [position, statement] of block.body.entries()) {
         if (!this.admitVisit()) return undefined;
         positions.set(statement, position);
-        const fact = this.statement(statement);
+        const fact = this.statement(statement, block);
         if (fact !== null) entries.push({ position, fact });
         if ((position + 1) % 1024 === 0) yield;
       }

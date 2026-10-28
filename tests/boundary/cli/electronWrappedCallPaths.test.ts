@@ -259,6 +259,18 @@ cliTest(
         coverage: "partial",
       },
       {
+        name: "conditional break to enclosing label",
+        body: 'guard:{if(!x)break guard;e.contextBridge.exposeInMainWorld("api",{copy:()=>e.ipcRenderer.send("x")});}',
+        conditions: ["!(!x)"],
+        coverage: "partial",
+      },
+      {
+        name: "break to inner label does not guard outer continuation",
+        body: 'outer:{inner:{if(x)break inner;}e.contextBridge.exposeInMainWorld("api",{copy:()=>e.ipcRenderer.send("x")});}',
+        conditions: [],
+        coverage: "complete",
+      },
+      {
         name: "definite early return",
         body: 'return;e.contextBridge.exposeInMainWorld("api",{copy:()=>e.ipcRenderer.send("x")});',
         conditions: [],
@@ -311,6 +323,22 @@ cliTest(
             ({ expression }) => expression,
           ),
         ).toEqual(fixture.conditions);
+        if (fixture.name === "conditional break to enclosing label") {
+          const edges = application.graph.edges.filter(
+            (edge) =>
+              edge.evidence.extractor.operation ===
+              "trace-electron-wrapper-path",
+          );
+          expect(edges.length).toBeGreaterThan(0);
+          for (const edge of edges) {
+            const conditions = z
+              .array(callPathConditionSchema)
+              .parse(edge.properties.conditions);
+            expect(conditions.map(({ expression }) => expression)).toEqual(
+              fixture.conditions,
+            );
+          }
+        }
         expect(terminalEvidence.evidence.coverage.status).toBe(
           fixture.coverage,
         );
