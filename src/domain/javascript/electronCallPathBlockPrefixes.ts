@@ -14,19 +14,29 @@ interface Completion {
   readonly fallthrough: boolean;
   readonly exits: boolean;
   readonly breaks: ReadonlySet<string>;
+  /** Unsupported control flow may leave the current labelled statement. */
+  readonly uncertain: boolean;
 }
 
 const FALLTHROUGH: Completion = {
   fallthrough: true,
   exits: false,
   breaks: new Set(),
+  uncertain: false,
 };
-const EXIT: Completion = { fallthrough: false, exits: true, breaks: new Set() };
+const EXIT: Completion = {
+  fallthrough: false,
+  exits: true,
+  breaks: new Set(),
+  uncertain: false,
+};
+const UNKNOWN: Completion = { ...FALLTHROUGH, uncertain: true };
 
 const mergeCompletions = (left: Completion, right: Completion): Completion => ({
   fallthrough: left.fallthrough || right.fallthrough,
   exits: left.exits || right.exits,
   breaks: new Set([...left.breaks, ...right.breaks]),
+  uncertain: left.uncertain || right.uncertain,
 });
 
 interface PrefixEntry {
@@ -62,7 +72,8 @@ export class ElectronCallPathBlockPrefixes {
     node: t.Node | null | undefined,
     depth = 0,
   ): Completion | undefined {
-    if (!node || depth >= 128) return FALLTHROUGH;
+    if (!node) return FALLTHROUGH;
+    if (depth >= 128) return UNKNOWN;
     if (!this.admitVisit()) return undefined;
     if (t.isReturnStatement(node) || t.isThrowStatement(node)) return EXIT;
     if (t.isBreakStatement(node))
@@ -70,6 +81,7 @@ export class ElectronCallPathBlockPrefixes {
         fallthrough: false,
         exits: false,
         breaks: new Set([node.label?.name ?? ""]),
+        uncertain: false,
       };
     if (t.isLabeledStatement(node)) {
       const body = this.completion(node.body, depth + 1);
@@ -88,6 +100,13 @@ export class ElectronCallPathBlockPrefixes {
       }
       return result;
     }
+    if (
+      t.isLoop(node) ||
+      t.isSwitchStatement(node) ||
+      t.isTryStatement(node) ||
+      t.isWithStatement(node)
+    )
+      return UNKNOWN;
     if (!t.isIfStatement(node)) return FALLTHROUGH;
     const consequent = this.completion(node.consequent, depth + 1);
     if (consequent === undefined) return undefined;
@@ -102,7 +121,7 @@ export class ElectronCallPathBlockPrefixes {
     block: t.BlockStatement,
   ): boolean | undefined {
     const result = this.completion(node);
-    if (result === undefined || result.fallthrough)
+    if (result === undefined || result.fallthrough || result.uncertain)
       return result === undefined ? undefined : false;
     for (const label of result.breaks) {
       if (!label || !this.parents) return false;

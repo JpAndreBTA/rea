@@ -283,6 +283,18 @@ cliTest(
         coverage: "complete",
       },
       {
+        name: "loop may break inner label before throw",
+        body: 'guard:{if(x)inner:{while(true){break inner;}throw 0;}e.contextBridge.exposeInMainWorld("api",{copy:()=>e.ipcRenderer.send("x")});}',
+        conditions: [],
+        coverage: "complete",
+      },
+      {
+        name: "try may break inner label before throw",
+        body: 'guard:{if(x)inner:{try{break inner;}finally{}throw 0;}e.contextBridge.exposeInMainWorld("api",{copy:()=>e.ipcRenderer.send("x")});}',
+        conditions: [],
+        coverage: "complete",
+      },
+      {
         name: "break to inner label does not guard outer continuation",
         body: 'outer:{inner:{if(x)break inner;}e.contextBridge.exposeInMainWorld("api",{copy:()=>e.ipcRenderer.send("x")});}',
         conditions: [],
