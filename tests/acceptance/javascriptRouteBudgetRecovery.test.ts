@@ -13,6 +13,45 @@ cliTest(
     const bundle = join(root, "parent.json");
     const route = `/api/${"a".repeat(1_100_000)}`;
     await writeFile(source, `router.push(${JSON.stringify(route)});\n`);
+    const unpublished = await cli.run({
+      arguments: [
+        "analyze-javascript-application",
+        root,
+        "--detail",
+        "summary",
+        "--evidence_output",
+        bundle,
+        "--view",
+        JSON.stringify({
+          kind: "javascript-routes",
+          collection: "routes",
+          limit: 1,
+        }),
+        "--json",
+      ],
+      timeoutMs: 60_000,
+    });
+    expect(unpublished.exitCode, unpublished.stderr).toBe(1);
+    expect(unpublished.json).toMatchObject({
+      code: "resource_constraint",
+      details: {
+        partial_observation: {
+          evidence_id: expect.stringMatching(/^ev_/),
+          normalized_result: expect.any(Object),
+        },
+      },
+    });
+    const unpublishedError = unpublished.json as {
+      remediation: { action: string };
+      details: { partial_observation: unknown };
+    };
+    expect(unpublishedError.remediation.action).toContain(
+      "details.partial_observation",
+    );
+    expect(
+      JSON.stringify(unpublishedError.details.partial_observation),
+    ).toContain(route);
+    await expect(readFile(bundle)).rejects.toMatchObject({ code: "ENOENT" });
     const analyzed = await cli.run({
       arguments: [
         "analyze-javascript-application",
