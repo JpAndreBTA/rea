@@ -60,6 +60,25 @@ it("retains required facts and failed vtool provenance for its universal-contain
     "vtool declined the universal container as not Mach-O; build metadata is normalized from otool only.",
   );
   expect(result.value.result).toMatchObject({
+    format: "mach-o-universal",
+    selected_architecture: { name: "arm64" },
+    build_metadata: {
+      items: [{ platform: "MACOS", minimum_os: "13.0", sdk: "14.2" }],
+    },
+    dependencies: {
+      items: [{ path: "/usr/lib/libSystem.B.dylib", kind: "LC_LOAD_DYLIB" }],
+    },
+    imports: {
+      items: expect.arrayContaining([
+        expect.objectContaining({ name: "__Block_copy" }),
+      ]),
+    },
+    exports: {
+      items: expect.arrayContaining([
+        expect.objectContaining({ name: "_main" }),
+      ]),
+    },
+    uuid: "01234567-89AB-CDEF-0123-456789ABCDEF",
     provenance: expect.arrayContaining([
       expect.objectContaining({
         tool: "vtool",
