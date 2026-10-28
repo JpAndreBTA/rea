@@ -95,6 +95,72 @@ const fixture = async (
   return { root, target, producer, client };
 };
 
+it.each([
+  new Error("HTTP 404: fixture response"),
+  new ProviderAdapterError("ida", "transport", {
+    diagnostics: { reason: "fixture response" },
+  }),
+  new AnalysisTimeoutError("ida_mcp_connect", 1000),
+  new AnalysisProtocolError("Malformed MCP response"),
+  new AnalysisResourceConstraintError(
+    "ida_mcp_connect",
+    "transport",
+    "fixture limit",
+    { max_response_bytes: 1 },
+  ),
+])(
+  "retains the selected HTTP endpoint on a connection failure",
+  async (cause) => {
+    const { root, target } = await createIdaTarget();
+    roots.push(root);
+    const producer = new RecordingIdaMcp(target, "attached");
+    vi.spyOn(producer, "connect").mockRejectedValue(cause);
+    const selected = "HTTP://LOCALHOST:01234/mcp?cursor=kept";
+    const client = new IdaSessionClient(
+      {
+        url: selected,
+        headers: { Authorization: "Bearer fixture-secret" },
+        mode: "attached",
+        timeoutMs: 1000,
+      },
+      target,
+      producer,
+    );
+    const result = await client.execute("list_procedures", {});
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected connection failure");
+    expect(result.error.diagnostics).toMatchObject({ endpoint: selected });
+    expect(JSON.stringify(projectAnalysisError(result.error))).not.toContain(
+      "fixture-secret",
+    );
+    await client.close();
+  },
+);
+
+it("redacts transport credentials even when they occur in the selected endpoint", async () => {
+  const { root, target } = await createIdaTarget();
+  roots.push(root);
+  const producer = new RecordingIdaMcp(target, "attached");
+  vi.spyOn(producer, "connect").mockRejectedValue(new Error("fixture failure"));
+  const client = new IdaSessionClient(
+    {
+      url: "http://localhost:1234/mcp?token=fixture-secret",
+      headers: { Authorization: "Bearer fixture-secret" },
+      mode: "attached",
+      timeoutMs: 1000,
+    },
+    target,
+    producer,
+  );
+  const result = await client.execute("list_procedures", {});
+  expect(result.ok).toBe(false);
+  if (result.ok) throw new Error("Expected connection failure");
+  const output = JSON.stringify(projectAnalysisError(result.error));
+  expect(output).not.toContain("fixture-secret");
+  expect(output).toContain("http://localhost:1234/mcp?token=");
+  await client.close();
+});
+
 it.each(["initialize", "transport"])(
   "preserves producer outcome facts when attributing a cached %s failure",
   async (operation) => {
