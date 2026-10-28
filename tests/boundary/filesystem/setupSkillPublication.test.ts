@@ -1,4 +1,5 @@
 import { constants as fsConstants } from "node:fs";
+import * as filesystem from "node:fs/promises";
 import {
   chmod,
   copyFile,
@@ -23,6 +24,11 @@ import {
   type SkillInstallFileOperations,
 } from "../../../src/application/SetupSkill.js";
 import { createTestTempDirectory } from "../../fixtures/temporaryDirectory.js";
+
+vi.mock("node:fs/promises", async (importOriginal) => {
+  const original = await importOriginal<typeof import("node:fs/promises")>();
+  return { ...original, link: vi.fn(original.link) };
+});
 
 const skillPublicationOperations: SkillInstallFileOperations = {
   mkdir: async (path) => {
@@ -157,6 +163,36 @@ describe("skill publication ownership", () => {
       expect.objectContaining({ path: manifest }),
     );
   });
+});
+
+it("preserves a destination created immediately before exclusive publication", async () => {
+  const home = await createTestTempDirectory("rea-skill-link-conflict-");
+  const manifest = join(skillDestinations(home, [])[0]!.path, "SKILL.md");
+  const originalLink = (
+    await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises")
+  ).link;
+  const link = vi
+    .mocked(filesystem.link)
+    .mockImplementation(async (from, to) => {
+      if (to === manifest)
+        await writeFile(manifest, "concurrent user file\n", { flag: "wx" });
+      await originalLink(from, to);
+    });
+  try {
+    const result = await installCanonicalSkill(home, [], {}, process.platform);
+    if (result.ok) throw new Error("Expected destination conflict");
+    expect(link).toHaveBeenCalled();
+    expect(result.error.reason).toContain(
+      "Skill destination appeared or changed",
+    );
+    expect(result.error.remediation).toContain(
+      "Stop concurrent setup activity",
+    );
+    expect(result.error.rollbackFailures).toEqual([]);
+    expect(await readFile(manifest, "utf8")).toBe("concurrent user file\n");
+  } finally {
+    link.mockRestore();
+  }
 });
 
 describe("skill publication recovery", () => {

@@ -168,8 +168,11 @@ export class SkillFilePublication {
           cause instanceof Error &&
           "code" in cause &&
           cause.code === "EEXIST"
-        )
+        ) {
+          // EEXIST proves the exclusive link did not publish our staging file.
+          this.#attempted = false;
           throw new SkillDestinationChangedError(this.path, cause);
+        }
         throw cause;
       }
     } else {
