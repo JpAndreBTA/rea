@@ -10,6 +10,25 @@ export type ElectronStatementFallthrough =
       readonly alternateExits: boolean;
     };
 
+interface Completion {
+  readonly fallthrough: boolean;
+  readonly exits: boolean;
+  readonly breaks: ReadonlySet<string>;
+}
+
+const FALLTHROUGH: Completion = {
+  fallthrough: true,
+  exits: false,
+  breaks: new Set(),
+};
+const EXIT: Completion = { fallthrough: false, exits: true, breaks: new Set() };
+
+const mergeCompletions = (left: Completion, right: Completion): Completion => ({
+  fallthrough: left.fallthrough || right.fallthrough,
+  exits: left.exits || right.exits,
+  breaks: new Set([...left.breaks, ...right.breaks]),
+});
+
 interface PrefixEntry {
   readonly position: number;
   readonly fact: ElectronStatementFallthrough;
@@ -38,44 +57,71 @@ export class ElectronCallPathBlockPrefixes {
     private readonly parents?: WeakMap<t.Node, t.Node>,
   ) {}
 
-  /** A labelled break leaves this block only when its target encloses it. */
+  /** Track local breaks separately so unreachable statements cannot invent an exit. */
+  private completion(
+    node: t.Node | null | undefined,
+    depth = 0,
+  ): Completion | undefined {
+    if (!node || depth >= 128) return FALLTHROUGH;
+    if (!this.admitVisit()) return undefined;
+    if (t.isReturnStatement(node) || t.isThrowStatement(node)) return EXIT;
+    if (t.isBreakStatement(node))
+      return {
+        fallthrough: false,
+        exits: false,
+        breaks: new Set([node.label?.name ?? ""]),
+      };
+    if (t.isLabeledStatement(node)) {
+      const body = this.completion(node.body, depth + 1);
+      if (body === undefined || !body.breaks.has(node.label.name)) return body;
+      const breaks = new Set(body.breaks);
+      breaks.delete(node.label.name);
+      return { ...body, fallthrough: true, breaks };
+    }
+    if (t.isBlockStatement(node)) {
+      let result = FALLTHROUGH;
+      for (const child of node.body) {
+        if (!result.fallthrough) break;
+        const next = this.completion(child, depth + 1);
+        if (next === undefined) return undefined;
+        result = mergeCompletions({ ...result, fallthrough: false }, next);
+      }
+      return result;
+    }
+    if (!t.isIfStatement(node)) return FALLTHROUGH;
+    const consequent = this.completion(node.consequent, depth + 1);
+    if (consequent === undefined) return undefined;
+    const alternate = this.completion(node.alternate, depth + 1);
+    return alternate === undefined
+      ? undefined
+      : mergeCompletions(consequent, alternate);
+  }
+
   private exits(
     node: t.Node | null | undefined,
     block: t.BlockStatement,
-    depth = 0,
   ): boolean | undefined {
-    if (!node || depth >= 128) return false;
-    if (!this.admitVisit()) return undefined;
-    if (t.isReturnStatement(node) || t.isThrowStatement(node)) return true;
-    if (t.isBreakStatement(node) && node.label && this.parents) {
+    const result = this.completion(node);
+    if (result === undefined || result.fallthrough)
+      return result === undefined ? undefined : false;
+    for (const label of result.breaks) {
+      if (!label || !this.parents) return false;
+      let matched = false;
       for (
         let parent = this.parents.get(block), n = 0;
         parent && n < 128;
         parent = this.parents.get(parent), n++
       ) {
         if (!this.admitVisit()) return undefined;
-        if (t.isFunction(parent)) return false;
-        if (
-          t.isLabeledStatement(parent) &&
-          parent.label.name === node.label.name
-        )
-          return true;
+        if (t.isFunction(parent)) break;
+        if (t.isLabeledStatement(parent) && parent.label.name === label) {
+          matched = true;
+          break;
+        }
       }
-      return false;
+      if (!matched) return false;
     }
-    if (t.isLabeledStatement(node))
-      return this.exits(node.body, block, depth + 1);
-    if (t.isBlockStatement(node)) {
-      for (const child of node.body) {
-        const result = this.exits(child, block, depth + 1);
-        if (result === undefined || result) return result;
-      }
-      return false;
-    }
-    if (!t.isIfStatement(node)) return false;
-    const consequent = this.exits(node.consequent, block, depth + 1);
-    if (consequent === undefined || !consequent) return consequent;
-    return this.exits(node.alternate, block, depth + 1);
+    return result.exits || result.breaks.size > 0;
   }
 
   statement(

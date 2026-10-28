@@ -277,6 +277,12 @@ cliTest(
         coverage: "complete",
       },
       {
+        name: "inner break skips unreachable throw",
+        body: 'guard:{if(x)inner:{break inner;throw 0;}e.contextBridge.exposeInMainWorld("api",{copy:()=>e.ipcRenderer.send("x")});}',
+        conditions: [],
+        coverage: "complete",
+      },
+      {
         name: "break to inner label does not guard outer continuation",
         body: 'outer:{inner:{if(x)break inner;}e.contextBridge.exposeInMainWorld("api",{copy:()=>e.ipcRenderer.send("x")});}',
         conditions: [],
