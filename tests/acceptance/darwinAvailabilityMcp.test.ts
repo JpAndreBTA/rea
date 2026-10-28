@@ -3,6 +3,7 @@ import { join, resolve } from "node:path";
 import { Client } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { expect } from "vitest";
+import { z } from "incur";
 import { createTestTempDirectory } from "../fixtures/temporaryDirectory.js";
 import { cliTest } from "../support/cli/cliFixture.js";
 
@@ -38,11 +39,33 @@ cliTest.skipIf(process.platform !== "darwin")(
       });
       expect(result.isError, JSON.stringify(result)).not.toBe(true);
       expect(result.structuredContent).toBeDefined();
-      const discovery = JSON.stringify(result.structuredContent);
-      expect(discovery).toContain(
-        "macOS process ownership helper compilation failed",
+      const discovery = z
+        .object({
+          result: z.object({
+            tool_availability: z.object({
+              groups: z.array(
+                z.object({
+                  names: z.array(z.string()),
+                  available: z.boolean(),
+                  reason: z.string(),
+                  remediation: z.string().nullable(),
+                }),
+              ),
+            }),
+          }),
+        })
+        .parse(result.structuredContent);
+      const apktoolGroup = discovery.result.tool_availability.groups.find(
+        ({ names }) => names.includes("inspect_apktool_client"),
       );
-      expect(discovery).toContain("missing-developer");
+      expect(apktoolGroup).toMatchObject({
+        available: false,
+        reason: "provider_unavailable",
+        remediation: expect.stringContaining(
+          "macOS process ownership helper compilation failed",
+        ),
+      });
+      expect(apktoolGroup?.remediation).toContain("missing-developer");
     } finally {
       await client.close();
       await transport.close();
