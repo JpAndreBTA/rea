@@ -29,6 +29,9 @@ import {
   formatCliOutput,
   prepareDelimitedOutput,
   delimitedOutputInputError,
+  containsUnpairedSurrogate,
+  containsUnrepresentableMarkdown,
+  hasUnpairedSurrogate,
 } from "./cliOutputFormatter.js";
 import { jsonLinesErrorRecord } from "./jsonLines.js";
 import { writeCliJsonLines } from "./jsonLinesOutput.js";
@@ -462,6 +465,55 @@ export const createCliResultOutput = (
       return true;
     }
     const selected = selection.value;
+    const refuseUnrepresentableText = async (): Promise<true> => {
+      error = projectAnalysisError(
+        new AnalysisInputError(
+          metadata.command,
+          {
+            userMessage:
+              format === "md"
+                ? "Markdown cannot preserve NUL or unpaired UTF-16 surrogates in rendered output."
+                : "TOON cannot preserve unpaired UTF-16 surrogates in UTF-8 output.",
+            remediationAction:
+              "Use --format json or --format yaml to retain the exact code units.",
+          },
+          [
+            {
+              path: ["--format"],
+              reason: "invalid_value",
+              message: "The selected format cannot preserve this value.",
+            },
+          ],
+        ),
+      );
+      const document = options.fullOutput
+        ? {
+            ok: false,
+            error,
+            meta: { command: metadata.command, duration: metadata.duration },
+          }
+        : error;
+      handled = true;
+      try {
+        await writeOutputText(
+          destination,
+          `${formatCliOutput(document, format)}\n`,
+        );
+      } catch (cause: unknown) {
+        failed = true;
+        throw cause;
+      }
+      return true;
+    };
+    if (
+      (format === "toon" || format === "md") &&
+      !options.tokenCount &&
+      (!options.tokenWindow || format === "md") &&
+      (format === "md"
+        ? containsUnrepresentableMarkdown(selected)
+        : containsUnpairedSurrogate(selected))
+    )
+      return refuseUnrepresentableText();
     const filtered =
       (format === "json" || format === "jsonl") &&
       ownsFilteredOutput &&
@@ -632,6 +684,8 @@ export const createCliResultOutput = (
             format,
           )
         : sliced;
+      if (format === "toon" && hasUnpairedSurrogate(outputDocument))
+        return refuseUnrepresentableText();
       handled = true;
       try {
         await writeOutputText(
