@@ -265,6 +265,18 @@ cliTest(
         coverage: "partial",
       },
       {
+        name: "nested label breaking enclosing label",
+        body: 'guard:{if(!x)inner:{break guard;}e.contextBridge.exposeInMainWorld("api",{copy:()=>e.ipcRenderer.send("x")});}',
+        conditions: ["!(!x)"],
+        coverage: "partial",
+      },
+      {
+        name: "nested label breaking itself",
+        body: 'guard:{if(!x)inner:{break inner;}e.contextBridge.exposeInMainWorld("api",{copy:()=>e.ipcRenderer.send("x")});}',
+        conditions: [],
+        coverage: "complete",
+      },
+      {
         name: "break to inner label does not guard outer continuation",
         body: 'outer:{inner:{if(x)break inner;}e.contextBridge.exposeInMainWorld("api",{copy:()=>e.ipcRenderer.send("x")});}',
         conditions: [],

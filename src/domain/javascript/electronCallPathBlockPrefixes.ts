@@ -1,5 +1,4 @@
 import * as t from "@babel/types";
-import { symbolicDefiniteExit } from "./javascriptSymbolicControlFlow.js";
 
 /** Syntax alone can establish an exit, but never a branch's contextual truth. */
 export type ElectronStatementFallthrough =
@@ -44,16 +43,18 @@ export class ElectronCallPathBlockPrefixes {
     node: t.Node | null | undefined,
     block: t.BlockStatement,
     depth = 0,
-  ): boolean {
+  ): boolean | undefined {
     if (!node || depth >= 128) return false;
-    if (symbolicDefiniteExit(node)) return true;
+    if (!this.admitVisit()) return undefined;
+    if (t.isReturnStatement(node) || t.isThrowStatement(node)) return true;
     if (t.isBreakStatement(node) && node.label && this.parents) {
       for (
         let parent = this.parents.get(block), n = 0;
         parent && n < 128;
         parent = this.parents.get(parent), n++
       ) {
-        if (!this.admitVisit() || t.isFunction(parent)) return false;
+        if (!this.admitVisit()) return undefined;
+        if (t.isFunction(parent)) return false;
         if (
           t.isLabeledStatement(parent) &&
           parent.label.name === node.label.name
@@ -62,35 +63,47 @@ export class ElectronCallPathBlockPrefixes {
       }
       return false;
     }
-    if (t.isBlockStatement(node))
-      return node.body.some((child) => this.exits(child, block, depth + 1));
-    return (
-      t.isIfStatement(node) &&
-      this.exits(node.consequent, block, depth + 1) &&
-      this.exits(node.alternate, block, depth + 1)
-    );
+    if (t.isLabeledStatement(node))
+      return this.exits(node.body, block, depth + 1);
+    if (t.isBlockStatement(node)) {
+      for (const child of node.body) {
+        const result = this.exits(child, block, depth + 1);
+        if (result === undefined || result) return result;
+      }
+      return false;
+    }
+    if (!t.isIfStatement(node)) return false;
+    const consequent = this.exits(node.consequent, block, depth + 1);
+    if (consequent === undefined || !consequent) return consequent;
+    return this.exits(node.alternate, block, depth + 1);
   }
 
   statement(
     statement: t.Statement,
-    block?: t.BlockStatement,
-  ): ElectronStatementFallthrough | null {
+    block: t.BlockStatement,
+  ): ElectronStatementFallthrough | null | undefined {
     const cached = this.#facts.get(statement);
     if (cached !== undefined) return cached;
-    const exits = (node: t.Node | null | undefined) =>
-      block === undefined
-        ? symbolicDefiniteExit(node)
-        : this.exits(node, block);
-    const fact: ElectronStatementFallthrough | null = exits(statement)
-      ? { kind: "exit" }
-      : t.isIfStatement(statement)
-        ? {
-            kind: "branch",
-            test: statement.test,
-            consequentExits: exits(statement.consequent),
-            alternateExits: exits(statement.alternate),
-          }
-        : null;
+    let fact: ElectronStatementFallthrough | null;
+    if (t.isIfStatement(statement)) {
+      if (!this.admitVisit()) return undefined;
+      const consequent = this.exits(statement.consequent, block);
+      const alternate = this.exits(statement.alternate, block);
+      if (consequent === undefined || alternate === undefined) return undefined;
+      fact =
+        consequent && alternate
+          ? { kind: "exit" }
+          : {
+              kind: "branch",
+              test: statement.test,
+              consequentExits: consequent,
+              alternateExits: alternate,
+            };
+    } else {
+      const result = this.exits(statement, block);
+      if (result === undefined) return undefined;
+      fact = result ? { kind: "exit" } : null;
+    }
     this.#facts.set(statement, fact);
     return fact;
   }
@@ -111,6 +124,7 @@ export class ElectronCallPathBlockPrefixes {
         if (!this.admitVisit()) return undefined;
         positions.set(statement, position);
         const fact = this.statement(statement, block);
+        if (fact === undefined) return undefined;
         if (fact !== null) entries.push({ position, fact });
         if ((position + 1) % 1024 === 0) yield;
       }

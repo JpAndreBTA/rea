@@ -1173,7 +1173,7 @@ export function* collectElectronWrappedCallPathsSteps(
       for (const statement of node.body) {
         walk(statement, env, next);
         const fallthrough = sequentialFallthrough(
-          prefixes.statement(statement, node),
+          prefixes.statement(statement, node) ?? null,
           env,
           next,
         );
