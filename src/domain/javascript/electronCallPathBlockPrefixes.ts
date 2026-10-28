@@ -67,6 +67,54 @@ export class ElectronCallPathBlockPrefixes {
     private readonly parents?: WeakMap<t.Node, t.Node>,
   ) {}
 
+  /** Retain jumps that may leave an unsupported construct, without entering functions. */
+  private possibleJumps(root: t.Node): Completion | undefined {
+    const breaks = new Set<string>();
+    let uncertain = false;
+    const pending: Array<{ node: t.Node; depth: number }> = [
+      { node: root, depth: 0 },
+    ];
+    while (pending.length > 0) {
+      const item = pending.pop();
+      if (item === undefined) break;
+      const { node, depth } = item;
+      if (!this.admitVisit()) return undefined;
+      if (depth >= 128) {
+        uncertain = true;
+        continue;
+      }
+      if (t.isFunction(node) || t.isClass(node)) continue;
+      if (
+        (t.isBreakStatement(node) || t.isContinueStatement(node)) &&
+        node.label
+      ) {
+        // Labels inside this unsupported construct consume their own jumps.
+        let parent = this.parents?.get(node);
+        let local = false;
+        while (parent && parent !== root) {
+          if (!this.admitVisit()) return undefined;
+          if (
+            t.isLabeledStatement(parent) &&
+            parent.label.name === node.label.name
+          ) {
+            local = true;
+            break;
+          }
+          parent = this.parents?.get(parent);
+        }
+        if (!local) breaks.add(node.label.name);
+      }
+      for (const key of t.VISITOR_KEYS[node.type] ?? []) {
+        const value = (node as unknown as Record<string, unknown>)[key];
+        const children = Array.isArray(value) ? value : [value];
+        for (const child of children) {
+          if (t.isNode(child)) pending.push({ node: child, depth: depth + 1 });
+        }
+      }
+    }
+    return { ...FALLTHROUGH, breaks, uncertain };
+  }
+
   /** Track local breaks separately so unreachable statements cannot invent an exit. */
   private completion(
     node: t.Node | null | undefined,
@@ -106,7 +154,7 @@ export class ElectronCallPathBlockPrefixes {
       t.isTryStatement(node) ||
       t.isWithStatement(node)
     )
-      return UNKNOWN;
+      return this.possibleJumps(node);
     if (!t.isIfStatement(node)) return FALLTHROUGH;
     const consequent = this.completion(node.consequent, depth + 1);
     if (consequent === undefined) return undefined;
