@@ -429,7 +429,7 @@ const expectedInventory = (
   const files = new Map<string, ExpectedFile>();
   const containers = new Map<string, ExpectedContainer>();
   const unavailableFiles = new Set<string>();
-  const seenPaths = new Set<string>();
+  const seenPaths = new Map<string, boolean>();
   let ambiguousPath: string | undefined;
   for (const occurrence of snapshot.occurrences) {
     if (occurrence.logical_path === ".") continue;
@@ -441,11 +441,17 @@ const expectedInventory = (
       occurrence.entry_kind === "file" &&
       (isNestedAsar || kind !== undefined)
     ) {
-      if (seenPaths.has(occurrence.logical_path)) {
-        ambiguousPath ??= occurrence.logical_path;
+      const available = occurrence.artifact_id !== null;
+      const priorAvailable = seenPaths.get(occurrence.logical_path);
+      if (priorAvailable !== undefined) {
+        // Unavailable siblings cannot bind content to the wrong occurrence.
+        // Keep them as unknown; any available sibling makes the shared path
+        // ambiguous for acquisition, regardless of encounter order.
+        if (priorAvailable || available)
+          ambiguousPath ??= occurrence.logical_path;
         continue;
       }
-      seenPaths.add(occurrence.logical_path);
+      seenPaths.set(occurrence.logical_path, available);
     }
     if (occurrence.artifact_id === null) {
       if (occurrence.entry_kind === "file" && kind !== undefined)

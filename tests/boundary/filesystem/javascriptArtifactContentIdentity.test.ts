@@ -268,6 +268,55 @@ it("does not attribute a colliding opaque path to one inventory occurrence", asy
   }
 });
 
+it.each(["unavailable", "packed-first", "packed-last"] as const)(
+  "handles normalized relevant ASAR collisions with %s content",
+  async (availability) => {
+    const root = await createTestTempDirectory("rea-asar-missing-collision-");
+    const archive = join(root, "missing.asar");
+    const main = Buffer.from("export const ready = true;\n");
+    const packed = Buffer.from("export const sibling = true;\n");
+    const missing = { size: packed.length, unpacked: true };
+    const present = { size: packed.length, offset: String(main.length) };
+    const files = {
+      "main.js": { size: main.length, offset: "0" },
+      "cafe\u0301.js": availability === "packed-first" ? present : missing,
+      "café.js": availability === "packed-last" ? present : missing,
+    };
+    await writeFile(
+      archive,
+      Buffer.concat([
+        asarHeaderBytes(JSON.stringify({ files })),
+        main,
+        ...(availability === "unavailable" ? [] : [packed]),
+      ]),
+    );
+    const snapshot = await scanArtifactInventory(archive);
+    const reader = new AsarArtifactReader(archive);
+    try {
+      const result = readJavaScriptArtifactFiles(reader, snapshot);
+      if (availability === "unavailable") {
+        const files = await result;
+        expect(files.files.map(({ path }) => path)).toEqual(["main.js"]);
+        expect(files.unanalyzed_files?.get("café.js")).toMatchObject({
+          path: "café.js",
+          inventory_artifact_id: null,
+          sha256: null,
+          limitations: [
+            expect.stringContaining("Multiple inventory occurrences"),
+          ],
+        });
+      } else {
+        await expect(result).rejects.toMatchObject({
+          reason: "path",
+          message: expect.stringContaining("café.js"),
+        });
+      }
+    } finally {
+      await reader.close();
+    }
+  },
+);
+
 it.each(["file-first", "link-first"] as const)(
   "rejects mixed-kind normalized ASAR collisions at inventory (%s)",
   async (order) => {
