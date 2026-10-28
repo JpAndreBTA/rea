@@ -42,7 +42,10 @@ it.skipIf(process.platform === "win32")(
     const client = new Client({ name: "adb-output-refusal", version: "1" });
     onTestFinished(() => client.close());
     await client.connect(clientTransport);
-    for (const output of [relative(process.cwd(), file), join(file, "child")]) {
+    for (const { output, hostCode } of [
+      { output: relative(process.cwd(), file), hostCode: "EEXIST" },
+      { output: join(file, "child"), hostCode: "ENOTDIR" },
+    ]) {
       for (const name of [
         "pull_adb_file",
         "capture_adb_screen",
@@ -62,8 +65,9 @@ it.skipIf(process.platform === "win32")(
             issues: [
               {
                 path: ["output_directory"],
-                observed: { path: output },
-                message: expect.stringContaining("not a directory"),
+                reason: "invalid_value",
+                observed: { path: output, code: hostCode },
+                message: expect.any(String),
               },
             ],
           },
@@ -91,7 +95,11 @@ it.skipIf(process.platform === "win32")(
           code: "invalid_request",
           details: {
             issues: [
-              { path: ["output_directory"], observed: { path: output } },
+              {
+                path: ["output_directory"],
+                reason: "invalid_value",
+                observed: { path: output, code: hostCode },
+              },
             ],
           },
         });

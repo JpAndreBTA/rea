@@ -42,10 +42,13 @@ it.skipIf(process.platform === "win32")(
     const client = new Client({ name: "adb-input-refusal", version: "1" });
     onTestFinished(() => client.close());
     await client.connect(clientTransport);
-    for (const selected of [
-      relative(process.cwd(), join(root, "missing")),
-      join(root, "directory"),
-      join(root, "loop"),
+    for (const { selected, hostCode } of [
+      {
+        selected: relative(process.cwd(), join(root, "missing")),
+        hostCode: "ENOENT",
+      },
+      { selected: join(root, "directory"), hostCode: undefined },
+      { selected: join(root, "loop"), hostCode: "ELOOP" },
     ]) {
       for (const [name, field] of [
         ["push_adb_file", "local_path"],
@@ -68,20 +71,16 @@ it.skipIf(process.platform === "win32")(
             issues: [
               {
                 path: [field],
-                observed: { path: selected },
-                message: selected.endsWith("missing")
-                  ? expect.stringContaining("does not exist")
-                  : selected.endsWith("directory")
-                    ? expect.stringContaining("not a regular file")
-                    : expect.stringContaining("could not be inspected"),
+                reason: "invalid_value",
+                observed: {
+                  path: selected,
+                  ...(hostCode === undefined ? {} : { code: hostCode }),
+                },
+                message: expect.any(String),
               },
             ],
           },
         });
-        if (selected.endsWith("loop"))
-          expect(error).toMatchObject({
-            details: { issues: [{ observed: { code: "ELOOP" } }] },
-          });
         const cli = spawnSync(
           process.execPath,
           [
@@ -103,7 +102,16 @@ it.skipIf(process.platform === "win32")(
         expect(JSON.parse(cli.stdout)).toMatchObject({
           code: "invalid_request",
           details: {
-            issues: [{ path: [field], observed: { path: selected } }],
+            issues: [
+              {
+                path: [field],
+                reason: "invalid_value",
+                observed: {
+                  path: selected,
+                  ...(hostCode === undefined ? {} : { code: hostCode }),
+                },
+              },
+            ],
           },
         });
       }
