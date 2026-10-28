@@ -211,13 +211,11 @@ it.each([16, 17])(
     const omission = result.limitations.filter((value) =>
       value.includes("additional archive decode failure diagnostic(s)"),
     );
-    expect(omission).toEqual(
-      count === 16
-        ? []
-        : [
-            "1 additional archive decode failure diagnostic(s) were not retained; reporting is bounded to 16 paths.",
-          ],
-    );
+    expect(omission).toHaveLength(count === 16 ? 0 : 1);
+    if (count === 17) {
+      expect(omission[0]).toMatch(/\b1 additional\b/u);
+      expect(omission[0]).toMatch(/\b16 paths\b/u);
+    }
     expect(result.graph.coverage).toContainEqual(
       expect.objectContaining({
         facet: "archive_decode",

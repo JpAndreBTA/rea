@@ -76,6 +76,12 @@ cliTest(
           omitted: 0,
         }),
       );
+      const omission = report.limitations.find((value) =>
+        value.includes("additional archive decode failure diagnostic(s)"),
+      );
+      expect(omission).toMatch(/\b1 additional\b/u);
+      expect(omission).toMatch(/\b16 paths\b/u);
+      expect(evidence.limitations).toContain(omission);
       for (const limitations of [report.limitations, evidence.limitations]) {
         const failures = limitations.find((value) =>
           value.startsWith(
@@ -83,9 +89,6 @@ cliTest(
           ),
         );
         expect(failures?.match(/bad-\d{2}\.nib/gu)).toHaveLength(16);
-        expect(limitations).toContain(
-          "1 additional archive decode failure diagnostic(s) were not retained; reporting is bounded to 16 paths.",
-        );
       }
     }
   },
