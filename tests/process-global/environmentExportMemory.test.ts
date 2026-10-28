@@ -41,7 +41,7 @@ it.each(["serialize", "parse"] as const)(
               "evidence",
               "capture.json",
               bytes,
-              "environment-build",
+              { operation: "environment-build" },
             );
       if (result.ok) throw new Error("Expected a memory refusal");
       expect(projectAnalysisError(result.error)).toMatchObject({
