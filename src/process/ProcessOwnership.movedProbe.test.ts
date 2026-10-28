@@ -29,7 +29,6 @@ vi.mock("./ExecFileOutput.js", () => ({ execFileOutput: state.ps }));
 import { runLinuxPrivateDisplayProbe } from "../hopper/LinuxPrivateDisplayProbe.js";
 import { cleanupOwnedProcessGroup } from "./ProcessOwnership.js";
 import { systemProcessOwnershipHost } from "./ProcessOwnershipObservation.js";
-import { ProcessOwnershipEvidenceOwner } from "./ProcessOwnershipEvidence.js";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -131,15 +130,33 @@ it("runs the production private-display timeout cleanup through the Linux host",
   expect(signals).toEqual([]);
   expect(childLive).toBe(true);
   expect(moved).toBe(true);
-  // Recovery control: the production token-swept owner discovers the survivor.
-  const control = await cleanupOwnedProcessGroup({
+  // The launcher may exit while cleanup is pending. Retry the same lease,
+  // which must retain the moved child instead of treating the empty root as released.
+  rootLive = false;
+  helper.signalCode = "SIGKILL";
+  helper.stdout.end();
+  helper.stderr.end();
+  helper.emit("exit", null, "SIGKILL");
+  helper.emit("close", null, "SIGKILL");
+  if (result.cleanup.status !== "pending")
+    throw new Error("expected pending cleanup");
+  await result.cleanup.lease.release();
+  expect(signals).toEqual([101]);
+  expect(childLive).toBe(false);
+
+  // The same safety applies to callers which use the optional implicit owner.
+  rootLive = true;
+  childLive = true;
+  moved = false;
+  signals.length = 0;
+  const implicitOwner = {
     runId: token,
     leaderPid: 100,
     processGroupId: 100,
-    sweepTokenOwnedProcesses: true,
-    evidenceOwner: new ProcessOwnershipEvidenceOwner(),
-  });
-  expect(control.cleaned).toBe(true);
-  expect(signals).toEqual([100, 101]);
+  };
+  expect((await cleanupOwnedProcessGroup(implicitOwner)).cleaned).toBe(false);
+  rootLive = false;
+  expect((await cleanupOwnedProcessGroup(implicitOwner)).cleaned).toBe(true);
+  expect(signals).toEqual([101]);
   expect(childLive).toBe(false);
 });
