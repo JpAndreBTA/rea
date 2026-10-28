@@ -465,7 +465,7 @@ export class IdaSessionClient implements AnalysisClient {
     const endpoint =
       artifactFailure === undefined && "url" in this.config
         ? {
-            endpoint: createIdaDiagnosticRedactor(this.config).text(
+            endpoint: createIdaDiagnosticRedactor(this.config).url(
               this.config.url,
             ),
           }
@@ -499,6 +499,15 @@ export class IdaSessionClient implements AnalysisClient {
       })
         .bindCleanupDependencies([cause])
         .bindCleanupResourceOwner(cause);
+    } else if (
+      (cause instanceof AnalysisTimeoutError ||
+        cause instanceof AnalysisResourceConstraintError) &&
+      cause.operation === operation &&
+      cause.diagnostics?.startup_operation !== undefined
+    ) {
+      // #start has already attributed this failure and its endpoint; wrapping
+      // it again would replace the original producer cause with an intermediate.
+      failure = cause;
     } else if (
       cause instanceof AnalysisTimeoutError ||
       cause instanceof AnalysisResourceConstraintError
@@ -643,6 +652,13 @@ export class IdaSessionClient implements AnalysisClient {
       // mutating the cached startup failure.
       throw analysisClientFailureForOperation(cause, "ida", operation, {
         startup_operation: cause.operation,
+        ...("url" in this.config
+          ? {
+              endpoint: createIdaDiagnosticRedactor(this.config).url(
+                this.config.url,
+              ),
+            }
+          : {}),
       }).bindCleanupResourceOwner(cause);
     }
   }

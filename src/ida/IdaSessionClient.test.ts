@@ -137,29 +137,41 @@ it.each([
   },
 );
 
-it("redacts transport credentials even when they occur in the selected endpoint", async () => {
-  const { root, target } = await createIdaTarget();
-  roots.push(root);
-  const producer = new RecordingIdaMcp(target, "attached");
-  vi.spyOn(producer, "connect").mockRejectedValue(new Error("fixture failure"));
-  const client = new IdaSessionClient(
-    {
-      url: "http://localhost:1234/mcp?token=fixture-secret",
-      headers: { Authorization: "Bearer fixture-secret" },
-      mode: "attached",
-      timeoutMs: 1000,
-    },
-    target,
-    producer,
-  );
-  const result = await client.execute("list_procedures", {});
-  expect(result.ok).toBe(false);
-  if (result.ok) throw new Error("Expected connection failure");
-  const output = JSON.stringify(projectAnalysisError(result.error));
-  expect(output).not.toContain("fixture-secret");
-  expect(output).toContain("http://localhost:1234/mcp?token=");
-  await client.close();
-});
+it.each([
+  "fixture-secret",
+  "fixture%2Dsecret",
+  "fixture%2dsecret",
+  "%66%69%78%74%75%72%65-secret",
+])(
+  "redacts a known transport credential in the selected endpoint: %s",
+  async (encoded) => {
+    const { root, target } = await createIdaTarget();
+    roots.push(root);
+    const producer = new RecordingIdaMcp(target, "attached");
+    vi.spyOn(producer, "connect").mockRejectedValue(
+      new Error("fixture failure"),
+    );
+    const client = new IdaSessionClient(
+      {
+        url: `http://localhost:1234/mcp?token=${encoded}&cursor=keep`,
+        headers: { Authorization: "Bearer fixture-secret" },
+        mode: "attached",
+        timeoutMs: 1000,
+      },
+      target,
+      producer,
+    );
+    const result = await client.execute("list_procedures", {});
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("Expected connection failure");
+    const output = JSON.stringify(projectAnalysisError(result.error));
+    expect(output).not.toContain("fixture-secret");
+    expect(output).not.toContain(encoded);
+    expect(output).toContain("http://localhost:1234/mcp?token=");
+    expect(output).toContain("&cursor=keep");
+    await client.close();
+  },
+);
 
 it.each(["initialize", "transport"])(
   "preserves producer outcome facts when attributing a cached %s failure",
