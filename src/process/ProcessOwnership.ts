@@ -1284,8 +1284,16 @@ const processOwnershipFailures = async (
       if (
         relation !== undefined &&
         relation.processGroupId !== fact.process.processGroupId
-      )
+      ) {
+        // The relation snapshot selected this member for the group being
+        // released. A later group change is not proof that the member exited.
+        failures.push({
+          pid: fact.process.pid,
+          reason: "process-identity-unavailable",
+          diagnostic: "process group changed during ownership validation",
+        });
         continue;
+      }
       if (fact.state !== "same-generation") {
         failures.push({
           pid: fact.process.pid,
@@ -1683,7 +1691,12 @@ const scanWithOwnershipEvidence = async (
     )
       failures.push({
         pid: fact.process.pid,
-        reason: "run-token-mismatch",
+        // An earlier observation without an identity cannot bind that
+        // observation to this currently readable process generation.
+        reason:
+          retainedCandidate.applicability === "identity-unresolved"
+            ? "process-identity-unavailable"
+            : "run-token-mismatch",
       });
     if (fact.token.state !== "unavailable") continue;
     const relationBefore =
